@@ -4,30 +4,54 @@
 #include "nfa.h"
 #include "dfa.h"
 
+/**
+ * single_char_nfa
+ * summary: Construct an NFA that only accepts a one character string of c
+ */
 void single_char_nfa(char c, struct nfa* newNfa) {
+	// Need two states
 	newNfa->Qcount = 2;
 	strcpy(newNfa->Q[0], "A");
 	strcpy(newNfa->Q[1], "B");
+	
+	// Second state is final
 	strcpy(newNfa->F[0], "B");
 	newNfa->Fcount = 1;
+	
+	// Single transition from A to B on character c
 	newNfa->delta = malloc(sizeof(struct transition));
 	strcpy(newNfa->delta->currentState, "A");
 	strcpy(newNfa->delta->finalState, "B");
 	newNfa->delta->input = c;
 	newNfa->Tcount = 1;
+	
+	// Start is A
 	strcpy(newNfa->q0, "A");
 }
 
+/**
+ * empty_char_nfa
+ * summary: Construct an NFA that only accepts the empty string
+ */
 void empty_char_nfa(struct nfa* newNfa) {
+	// Single state
 	newNfa->Qcount = 1;
-	strcpy(newNfa->Q[0], "A");;
+	strcpy(newNfa->Q[0], "A");
+	
+	// It's also the final state
 	strcpy(newNfa->F[0], "A");
 	newNfa->Fcount = 1;
+	
+	// No transitions
 	newNfa->delta = NULL;
 	newNfa->Tcount = 0;
 	strcpy(newNfa->q0, "A");
 }
 
+/**
+ * union_nfa
+ * summary: Construct an NFA that is the union of nfa1 and nfa2
+ */
 void union_nfa(struct nfa* nfa1, struct nfa* nfa2, struct nfa* newNfa) {
 	int i;
 	
@@ -116,6 +140,10 @@ void union_nfa(struct nfa* nfa1, struct nfa* nfa2, struct nfa* newNfa) {
 	free(nfa2->delta);
 }
 
+/**
+ * concat_nfa
+ * summary: Construct an NFA that is the concatenation of nfa1 and nfa2
+ */
 void concat_nfa(struct nfa* nfa1, struct nfa* nfa2, struct nfa* newNfa) {
 	int i;
 	
@@ -256,6 +284,10 @@ void star_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 	free(nfa1->delta);
 }
 
+/**
+ * copy_nfa
+ * summary: Construct an NFA that is exactly the same as nfa1
+ */
 void copy_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 	int i;
 	
@@ -295,12 +327,20 @@ void copy_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 	free(nfa1->delta);
 }
 
+/**
+ * vertical_extract
+ * summary: Find the substring that ought to be resolved before applying union operator
+ */
 void vertical_extract(char* regex, size_t regex_size, size_t *substr_size) {
 	int bar_count = 1;
 	int bar_ignore = 0;
 	*substr_size = 0;
+	
+	// First character must be |
 	if(regex[0] != '|')
 		return;
+	
+	// Find next vertical bar or end of string
 	while(bar_count > 0) {
 		(*substr_size)++;
 		if ((*substr_size) == regex_size && !bar_ignore)
@@ -308,20 +348,30 @@ void vertical_extract(char* regex, size_t regex_size, size_t *substr_size) {
 		if (regex[*substr_size] == '|') {
 			bar_count--;
 		} else if (regex[*substr_size] == '(') {
-			bar_ignore++;
+			bar_ignore++; // Ignore bars inside ()
 		} else if (regex[*substr_size] == ')') {
-			bar_ignore--;
+			bar_ignore--; // Stop ignore once outside
 		}
 	}
+
+	// Substract the size of the first vertical bar
 	*substr_size -= 1;
 }
 
+/**
+ * paran_extract
+ * summary: Find the substring that ought to be resolved for paranthetical grouping
+ */
 void paran_extract(char* regex, size_t regex_size, size_t *substr_size, int *has_star) {
 	int paren_count = 1;
 	*substr_size = 0;
 	*has_star = 0;
+	
+	// First character must be (
 	if(regex[0] != '(')
 		return;
+	
+	// Find paired )
 	while(paren_count > 0) {
 		(*substr_size)++;
 		if (regex[*substr_size] == '(') {
@@ -330,11 +380,15 @@ void paran_extract(char* regex, size_t regex_size, size_t *substr_size, int *has
 			paren_count--;
 		}
 	}
+	
+	// If star is after, let calling function know
 	if (*substr_size + 1 < regex_size) {
 		if (regex[*substr_size + 1] == '*') {
 			*has_star = 1;
 		}
 	}
+	
+	// Subtract the size of left paranthesis
 	*substr_size -= 1;
 }
 
@@ -342,9 +396,13 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 	int index = 0;
 	char cur;
 	struct nfa leftNfa;
+	
+	// Initialize as empty string NFA
 	empty_char_nfa(&leftNfa);
 	
+	// Iterate through each character in regex
 	while (index < regex_size) {
+		// Get current character
 		cur = regex[index];
 
 		switch(cur) {
@@ -353,15 +411,22 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 			{
 				struct nfa tempNfa;
 				struct nfa tempNfa2;
+				// Construct single character NFA
 				single_char_nfa(cur, &tempNfa);
+				
+				// If there's a star after, create before concat
 				if (index + 1 < regex_size && regex[index+1] == '*') {
 					star_nfa(&tempNfa, &tempNfa2);
+					// Concat to leftNfa
 					concat_nfa(&leftNfa, &tempNfa2, &tempNfa);
 					copy_nfa(&tempNfa, &leftNfa);
+					// Increase index by 2 for character and *
 					index += 2;
 				} else {
+					// Concat to leftNfa
 					concat_nfa(&leftNfa, &tempNfa, &tempNfa2);
 					copy_nfa(&tempNfa2, &leftNfa);
+					// Increase index by 1 for the character
 					index++;
 				}
 			}
@@ -370,15 +435,22 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 			{
 				struct nfa tempNfa;
 				struct nfa tempNfa2;
+				// Create empty character NFA
 				empty_char_nfa(&tempNfa);
+				
+				// If star resolve
 				if (index + 1 < regex_size && regex[index+1] == '*') {
 					star_nfa(&tempNfa, &tempNfa2);
+					// Concat to leftNfa
 					concat_nfa(&leftNfa, &tempNfa2, &tempNfa);
 					copy_nfa(&tempNfa, &leftNfa);
+					// Increase index by 2 for character and *
 					index += 2;
 				} else {
+					// Concat to leftNfa
 					concat_nfa(&leftNfa, &tempNfa, &tempNfa2);
 					copy_nfa(&tempNfa2, &leftNfa);
+					// Increase index by 1 for e
 					index++;
 				}
 			}
@@ -388,10 +460,15 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 				size_t substr_size;
 				struct nfa tempNfa;
 				struct nfa tempNfa2;
+				// Find substring to resolve before union
 				vertical_extract(regex+index, regex_size-index, &substr_size);
+				// Initialize that substring as its own NFA
 				init_nfa(regex+index+1, substr_size, &tempNfa);
+				// Increase the index by the substring + 1 for '|'
 				index += substr_size + 1;
+				// Union the leftNfa with the init'ed NFA
 				union_nfa(&leftNfa, &tempNfa, &tempNfa2);
+				// Copy result to leftNfa
 				copy_nfa(&tempNfa2, &leftNfa);
 			}
 			break;
@@ -401,29 +478,46 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 				int has_star;
 				struct nfa tempNfa;
 				struct nfa tempNfa2;
+				// Find substring to resolve 
 				paran_extract(regex+index, regex_size-index, &substr_size, &has_star);
+				// Resolve substring to NFA
 				init_nfa(regex+index+1, substr_size, &tempNfa);
+				// If star after ()*, perform now
 				if(has_star) {
 					star_nfa(&tempNfa, &tempNfa2);
 					copy_nfa(&tempNfa2, &tempNfa);
+					// Increase index for *
 					index++;
 				}
+				// Increase index by substring + 2 for ( and )
 				index += substr_size + 2;
+				// Concatenate leftNfa with paranthetical
 				concat_nfa(&leftNfa, &tempNfa, &tempNfa2);
+				// Copy to leftNfa
 				copy_nfa(&tempNfa2, &leftNfa);
 			}
 			break;
 		default:
+			// Ignore, it's either an unknown entry
+			// Or multiple * in a row which is redundant
 			index++;
 			break;
 		}	
 	}
 	
+	// Copy leftNfa to myNfa
 	copy_nfa(&leftNfa, myNfa);
 }
 
+/**
+ * cleanup_nfa_states
+ * summary: before creating a DFA, reduce all the states to single character
+ * since this makes giving them a separator unnecessary
+ */
 void cleanup_nfa_states(struct nfa* myNfa) {
 	int i;
+	
+	// Give every state an id equal to i+1
 	for (i = 0; i < myNfa->Qcount; i++) {
 		int j;
 		char c[2] = {i+1, 0};
@@ -431,6 +525,7 @@ void cleanup_nfa_states(struct nfa* myNfa) {
 		strcpy(cur, myNfa->Q[i]);
 		strcpy(myNfa->Q[i], c);
 		
+		// Convert all references in transition functions
 		for (j = 0; j < myNfa->Tcount; j++) {
 			if(!strcmp(cur, myNfa->delta[j].currentState)) {
 				strcpy(myNfa->delta[j].currentState, c);
@@ -440,18 +535,24 @@ void cleanup_nfa_states(struct nfa* myNfa) {
 			}
 		}
 		
+		// Convert all references in Final states
 		for (j = 0; j < myNfa->Fcount; j++) {
 			if(!strcmp(cur, myNfa->F[j])) {
 				strcpy(myNfa->F[j], c);
 			}
 		}
 		
+		// Change start state if applies
 		if(!strcmp(cur, myNfa->q0)) {
 			strcpy(myNfa->q0, c);
 		}
 	}
 }
 
+/**
+ * is_final
+ * summary: determine if any single-character states from state are in myNfa->F
+ */
 int is_final(const char *state, struct nfa* myNfa) {
 	int i;
 	for (i=0; i<myNfa->Fcount; i++) {
@@ -462,6 +563,12 @@ int is_final(const char *state, struct nfa* myNfa) {
 	return 0;
 }
 
+/**
+ * insertState
+ * summary: insert single-character state c into multi-character DFA state newState
+ * It is important that single-character states are sorted in newState
+ * to avoid duplicates of the same state with different ordering
+ */
 void insertState(char c, char* newState) {
 	int i = 0;
 	char swap;
@@ -485,8 +592,15 @@ void insertState(char c, char* newState) {
 	}
 }
 
+/**
+ * build_new_states
+ * summary: Build new DFA states by finding all 'a' and 'b' transitions from any NFA
+ * state listed in thisState.
+ */
 void build_new_states(const char* thisState, char* newStateA, char* newStateB, struct nfa* myNfa) {
 	int i;
+	
+	// Find all one-step transitions from a state in thisState that take 'a' or 'b'
 	for (i=0; i<myNfa->Tcount; i++) {
 		if(strpbrk(myNfa->delta[i].currentState, thisState)) {
 			int j;
@@ -500,7 +614,8 @@ void build_new_states(const char* thisState, char* newStateA, char* newStateB, s
 			}
 		}
 	}
-	
+
+	// Add all empty-string transitions	
 	size_t length = strlen(newStateA);
 	for (i=0; i<myNfa->Tcount; i++) {
 		size_t new_length;
@@ -516,6 +631,7 @@ void build_new_states(const char* thisState, char* newStateA, char* newStateB, s
 		}
 	}
 
+	// Add all empty-string transitions
 	length = strlen(newStateB);
 	for (i=0; i<myNfa->Tcount; i++) {
 		size_t new_length;
@@ -532,6 +648,10 @@ void build_new_states(const char* thisState, char* newStateA, char* newStateB, s
 	}
 }
 
+/**
+ * expand_delta
+ * summary: expand the number of transitions allocated
+ */
 void expand_delta (int* tempTCount, struct dfa* myDfa) {
 	int i;
 	(*tempTCount) *= 2;
@@ -545,19 +665,26 @@ void expand_delta (int* tempTCount, struct dfa* myDfa) {
 	myDfa->delta = t;
 }
 
+/**
+ * link_new_states
+ * summary: Add new states newStateA and newStateB to myDfa
+ */
 void link_new_states(int index, char* newStateA, char* newStateB, struct dfa* myDfa, struct nfa* myNfa, int* tempTCount) {
 	int i;
 	int add_state = 1;
-	
+
+	// We are going to add two new transitions, so make sure we have the space.	
 	if (myDfa->Tcount + 2 > *tempTCount) {
 		expand_delta(tempTCount, myDfa);
 	}
 
+	// If 'a' didn't lead to any state, assign to null state
 	if (!newStateA[0]) {
 		myDfa->delta[myDfa->Tcount].input = 'a';
 		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
 		strcpy(myDfa->delta[myDfa->Tcount].finalState, "null");
 	} else {
+		// Search for state if it exists
 		int j = 1;
 		while(j < myDfa->Qcount) {
 			if (!strcmp(newStateA, myDfa->Q[j])) {
@@ -566,27 +693,34 @@ void link_new_states(int index, char* newStateA, char* newStateB, struct dfa* my
 			j++;
 		}
 
+		// If it doesn't exist, add it and increment count
 		if (j == myDfa->Qcount) {
 			strcpy(myDfa->Q[j], newStateA);
 			myDfa->Qcount++;
+			
+			// Add to final states if it includes a final state from NFA
 			if (is_final(newStateA, myNfa)) {
 				strcpy(myDfa->F[myDfa->Fcount], newStateA);
 				myDfa->Fcount++;
 			}
 		}
 
+		// Add transition function
 		myDfa->delta[myDfa->Tcount].input = 'a';
 		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
 		strcpy(myDfa->delta[myDfa->Tcount].finalState, newStateA);
 	}
 	
+	// Increment Tcount
 	myDfa->Tcount++;
 		
+	// If 'b' didn't lead to any state, assign to null state
 	if (!newStateB[0]) {
 		myDfa->delta[myDfa->Tcount].input = 'b';
 		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
 		strcpy(myDfa->delta[myDfa->Tcount].finalState, "null");
 	} else {
+		// Search for state if it exists
 		int j = 1;
 		while(j < myDfa->Qcount) {
 			if (!strcmp(newStateB, myDfa->Q[j])) {
@@ -595,21 +729,25 @@ void link_new_states(int index, char* newStateA, char* newStateB, struct dfa* my
 			j++;
 		}
 
+		// If it doesn't exist, add it and increment count
 		if (j == myDfa->Qcount) {
 			strcpy(myDfa->Q[j], newStateB);
 			myDfa->Qcount++;
+			// Add to final states if it includes a final state from NFA
 			if (is_final(newStateB, myNfa)) {
 				strcpy(myDfa->F[myDfa->Fcount], newStateB);
 				myDfa->Fcount++;
 			}
 		}
 
+		// Add transition function
 		myDfa->delta[myDfa->Tcount].input = 'b';
 		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
 		strcpy(myDfa->delta[myDfa->Tcount].finalState, newStateB);
 		
 	}
-	
+
+	// Increment Tcount	
 	myDfa->Tcount++;
 }
 
@@ -624,6 +762,7 @@ void nfa_to_dfa(struct nfa* myNfa, struct dfa* myDfa) {
 	
 	strcpy(myDfa->Q[0], "null");
 	
+	// 'a' and 'b' from 'null' go back to 'null'
 	myDfa->delta = malloc(sizeof(struct transition) * tempTCount);
 	myDfa->delta[0].input = 'a';
 	strcpy(myDfa->delta[0].currentState, "null");
@@ -635,6 +774,8 @@ void nfa_to_dfa(struct nfa* myNfa, struct dfa* myDfa) {
 	
 	// Create start state
 	strcpy(myDfa->q0, myNfa->q0);
+	
+	// Add all empty string reachable states to start state
 	for (i=0; i<myNfa->Tcount; i++) {
 		if (myNfa->delta[i].input == 'e' && strpbrk(myNfa->delta[i].currentState, myDfa->q0)) {
 			int j = 0;
@@ -661,21 +802,24 @@ void nfa_to_dfa(struct nfa* myNfa, struct dfa* myDfa) {
 		}
 	}
 	
+	// Add start state to Q
 	strcpy(myDfa->Q[1], myDfa->q0);
 	myDfa->Qcount++;
-	
+
+	// Add start state to final if final	
 	if (is_final(myDfa->q0, myNfa)) {
 		myDfa->Fcount++;
 		strcpy(myDfa->F[0], myDfa->q0);
 	}
 	
+	// Attempt to reach other states
 	i = 1;
 	while(i < myDfa->Qcount) {
 		char thisState[256];
 		char newStateA[256] = { 0 };
 		char newStateB[256] = { 0 };
 		int j;
-
+		
 		strcpy(thisState, myDfa->Q[i]);
 		build_new_states(thisState, newStateA, newStateB, myNfa);
 		link_new_states(i, newStateA, newStateB, myDfa, myNfa, &tempTCount);
