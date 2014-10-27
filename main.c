@@ -469,6 +469,40 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 	copy_nfa(&leftNfa, myNfa);
 }
 
+void cleanup_nfa_states(struct nfa* myNfa) {
+	int i;
+	for (i = 0; i < myNfa->Qcount; i++) {
+		int j;
+		char c[2] = {i+1, 0};
+		char cur[256];
+		strcpy(cur, myNfa->Q[i]);
+		strcpy(myNfa->Q[i], c);
+		
+		for (j = 0; j < myNfa->Tcount; j++) {
+			if(!strcmp(cur, myNfa->delta[j].currentState)) {
+				strcpy(myNfa->delta[j].currentState, c);
+			}
+			if(!strcmp(cur, myNfa->delta[j].finalState)) {
+				strcpy(myNfa->delta[j].finalState, c);
+			}
+		}
+		
+		for (j = 0; j < myNfa->Fcount; j++) {
+			if(!strcmp(cur, myNfa->F[j])) {
+				strcpy(myNfa->F[j], c);
+			}
+		}
+		
+		// RESUME CODING HERE
+		
+		
+	}
+}
+
+void nfa_to_dfa(struct nfa* myNfa, struct dfa* myDfa) {
+	cleanup_nfa_states(myNfa);
+}
+
 void init_dfa(char* regex, size_t regex_size, struct dfa* myDfa) {
 	struct nfa myNfa;
 	init_nfa(regex, regex_size, &myNfa);
