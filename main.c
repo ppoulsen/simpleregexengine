@@ -40,6 +40,7 @@ void main (void) {
 
 
 	getline(&regex, &regex_size, stdin);
+	regex_size = strlen(regex);
 	init_dfa(regex, regex_size, &myDfa);
 	
 	while(getline(&line, &line_size, stdin) >= 0) {
@@ -241,11 +242,9 @@ void star_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 	newNfa->Qcount = nfa1->Qcount + 1;
 	
 	// Copy states over, with prepending to avoid collision
-	for (i = 0; i < newNfa->Qcount; i++) {
-		if (i < nfa1->Qcount) {
-			strcpy(newNfa->Q[i], "A");
-			strcat(newNfa->Q[i], nfa1->Q[i]);
-		}
+	for (i = 0; i < nfa1->Qcount; i++) {
+		strcpy(newNfa->Q[i], "A");
+		strcat(newNfa->Q[i], nfa1->Q[i]);
 	}
 	
 	// Create new state
@@ -305,8 +304,169 @@ void star_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 	free(nfa1->delta);
 }
 
-void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
+void copy_nfa(struct nfa* nfa1, struct nfa* newNfa) {
+	int i;
 	
+	// Same number of states
+	newNfa->Qcount = nfa1->Qcount;
+	
+	// Copy states over
+	for (i = 0; i < newNfa->Qcount; i++) {
+		strcpy(newNfa->Q[i], nfa1->Q[i]);
+	}
+	
+	// Same number of final states
+	newNfa->Fcount = nfa1->Fcount;
+	
+	// Copy nfa1 final states
+	for (i = 0; i < newNfa->Fcount; i++) {
+		strcpy(newNfa->F[i], nfa1->F[i]);
+	}
+	
+	// Same transitions as before
+	newNfa->Tcount = nfa1->Tcount;
+	
+	// Malloc and copy original transitions over
+	newNfa->delta = malloc(sizeof(struct transition) * newNfa->Tcount);
+	for (i = 0; i < nfa1->Tcount; i++) {
+		newNfa->delta[i] = (struct transition){
+			.input = nfa1->delta[i].input,
+		};
+		strcpy(newNfa->delta[i].currentState, nfa1->delta[i].currentState);
+		strcpy(newNfa->delta[i].finalState, nfa1->delta[i].finalState);
+	}
+	
+	// Free unused transitions
+	free(nfa1->delta);
+}
+
+void paran_extract(char* regex, size_t regex_size, size_t *substr_size, int *has_star) {
+	int paren_count = 1;
+	*substr_size = 0;
+	*has_star = 0;
+	if(regex[0] != '(')
+		return;
+	while(paren_count > 0) {
+		(*substr_size)++;
+		if (regex[*substr_size] == '(') {
+			paren_count++;
+		} else if (regex[*substr_size] == ')') {
+			paren_count--;
+		}
+	}
+	if (*substr_size + 1 < regex_size) {
+		if (regex[*substr_size + 1] == '*') {
+			*has_star = 1;
+		}
+	}
+	*substr_size -= 1;
+}
+
+void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
+	int index = 0;
+	char cur;
+	struct nfa leftNfa;
+	empty_char_nfa(&leftNfa);
+	
+	while (index < regex_size) {
+		cur = regex[index];
+
+		switch(cur) {
+		case 'a':
+		case 'b':
+			{
+				struct nfa tempNfa;
+				struct nfa tempNfa2;
+				single_char_nfa(cur, &tempNfa);
+				if (index + 1 < regex_size && regex[index+1] == '*') {
+					star_nfa(&tempNfa, &tempNfa2);
+					concat_nfa(&leftNfa, &tempNfa2, &tempNfa);
+					copy_nfa(&tempNfa, &leftNfa);
+					index += 2;
+				} else {
+					concat_nfa(&leftNfa, &tempNfa, &tempNfa2);
+					copy_nfa(&tempNfa2, &leftNfa);
+					index++;
+				}
+			}
+			break;
+		case 'e':
+			{
+				struct nfa tempNfa;
+				struct nfa tempNfa2;
+				empty_char_nfa(&tempNfa);
+				if (index + 1 < regex_size && regex[index+1] == '*') {
+					star_nfa(&tempNfa, &tempNfa2);
+					concat_nfa(&leftNfa, &tempNfa2, &tempNfa);
+					copy_nfa(&tempNfa, &leftNfa);
+					index += 2;
+				} else {
+					concat_nfa(&leftNfa, &tempNfa, &tempNfa2);
+					copy_nfa(&tempNfa2, &leftNfa);
+					index++;
+				}
+			}
+			break;
+		case '|':
+			{
+				struct nfa tempNfa;
+				struct nfa tempNfa2;
+				if (regex[index+1] ==  '(') {
+					size_t substr_size;
+					int has_star;
+					paran_extract(regex+index+1, regex_size-index-1, &substr_size, &has_star);
+					init_nfa(regex+index+2, substr_size, &tempNfa);
+					index += substr_size + 2 /* ( and ) */ + 1 /* | */; 
+					if (has_star) {
+						star_nfa(&tempNfa, &tempNfa2);
+						copy_nfa(&tempNfa2, &tempNfa);
+					}
+				} else if(regex[index+1] == 'e') {
+					empty_char_nfa(&tempNfa);
+					if ( index + 2 < regex_size && regex[index+2] == '*') {
+						star_nfa(&tempNfa, &tempNfa2);
+						copy_nfa(&tempNfa2, &tempNfa);
+						index++;
+					}
+					index += 2; /* | and e */
+				} else {
+					single_char_nfa(regex[index+1], &tempNfa);
+					if ( index + 2 < regex_size && regex[index+2] == '*') {
+						star_nfa(&tempNfa, &tempNfa2);
+						copy_nfa(&tempNfa2, &tempNfa);
+						index++;
+					}
+					index += 2; /* | and a or b */
+				}
+				union_nfa(&leftNfa, &tempNfa, &tempNfa2);
+				copy_nfa(&tempNfa2, &leftNfa);
+			}
+			break;
+		case '(':
+			{
+				size_t substr_size;
+				int has_star;
+				struct nfa tempNfa;
+				struct nfa tempNfa2;
+				paran_extract(regex+index, regex_size-index, &substr_size, &has_star);
+				init_nfa(regex+index+1, substr_size, &tempNfa);
+				if(has_star) {
+					star_nfa(&tempNfa, &tempNfa2);
+					copy_nfa(&tempNfa2, &tempNfa);
+					index++;
+				}
+				index += substr_size + 2;
+				concat_nfa(&leftNfa, &tempNfa, &tempNfa2);
+				copy_nfa(&tempNfa2, &leftNfa);
+			}
+			break;
+		default:
+			index++;
+			break;
+		}	
+	}
+	
+	copy_nfa(&leftNfa, myNfa);
 }
 
 void init_dfa(char* regex, size_t regex_size, struct dfa* myDfa) {
