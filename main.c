@@ -336,6 +336,9 @@ void copy_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 		strcpy(newNfa->delta[i].finalState, nfa1->delta[i].finalState);
 	}
 	
+	// Copy start state
+	strcpy(newNfa->q0, nfa1->q0);
+	
 	// Free unused transitions
 	free(nfa1->delta);
 }
@@ -493,21 +496,272 @@ void cleanup_nfa_states(struct nfa* myNfa) {
 			}
 		}
 		
-		// RESUME CODING HERE
-		
-		
+		if(!strcmp(cur, myNfa->q0)) {
+			strcpy(myNfa->q0, c);
+		}
 	}
 }
 
+int is_final(const char *state, struct nfa* myNfa) {
+	int i;
+	for (i=0; i<myNfa->Fcount; i++) {
+		if(strpbrk(myNfa->F[i], state)) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
+void insertState(char c, char* newState) {
+	int i = 0;
+	char swap;
+	char tmp;
+	while(newState[i]) {
+		if(newState[i] == c) {
+			return;
+		}
+		if(newState[i] > c) {
+			break;
+		}
+		i++;
+	}
+	swap = newState[i];
+	newState[i] = c;
+	while(newState[i]) {
+		tmp = newState[i+1];
+		newState[i+1] = swap;
+		swap = tmp;
+		i++;
+	}
+}
+
+void build_new_states(const char* thisState, char* newStateA, char* newStateB, struct nfa* myNfa) {
+	int i;
+	for (i=0; i<myNfa->Tcount; i++) {
+		if(strpbrk(myNfa->delta[i].currentState, thisState)) {
+			int j;
+			char newState[2] = {0};
+			if (myNfa->delta[i].input == 'a') {
+				insertState(myNfa->delta[i].finalState[0], newStateA);
+			} else if (myNfa->delta[i].input == 'b') {
+				insertState(myNfa->delta[i].finalState[0], newStateB);
+			} else {
+				continue;
+			}
+		}
+	}
+	
+	size_t length = strlen(newStateA);
+	for (i=0; i<myNfa->Tcount; i++) {
+		size_t new_length;
+		if(strpbrk(newStateA, myNfa->delta[i].currentState)) {
+			if(myNfa->delta[i].input == 'e') {
+				insertState(myNfa->delta[i].finalState[0], newStateA);
+			}
+		}
+		new_length = strlen(newStateA);
+		if (new_length != length) {
+			length = new_length;
+			i=0;
+		}
+	}
+
+	length = strlen(newStateB);
+	for (i=0; i<myNfa->Tcount; i++) {
+		size_t new_length;
+		if(strpbrk(newStateB, myNfa->delta[i].currentState)) {
+			if(myNfa->delta[i].input == 'e') {
+				insertState(myNfa->delta[i].finalState[0], newStateB);
+			}
+		}
+		new_length = strlen(newStateB);
+		if (new_length != length) {
+			length = new_length;
+			i=0;
+		}
+	}
+}
+
+void expand_delta (int* tempTCount, struct dfa* myDfa) {
+	int i;
+	(*tempTCount) *= 2;
+	struct transition* t = malloc(*tempTCount);
+	for (i=0; i < myDfa->Tcount; i++) {
+		t[i].input = myDfa->delta[i].input;
+		strcpy(t[i].currentState, myDfa->delta[i].currentState);
+		strcpy(t[i].finalState, myDfa->delta[i].finalState);
+	}
+	free(myDfa->delta);
+	myDfa->delta = t;
+}
+
+void link_new_states(int index, char* newStateA, char* newStateB, struct dfa* myDfa, struct nfa* myNfa, int* tempTCount) {
+	int i;
+	int add_state = 1;
+	
+	if (myDfa->Tcount + 2 > *tempTCount) {
+		expand_delta(tempTCount, myDfa);
+	}
+
+	if (!newStateA[0]) {
+		myDfa->delta[myDfa->Tcount].input = 'a';
+		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
+		strcpy(myDfa->delta[myDfa->Tcount].finalState, "null");
+	} else {
+		int j = 1;
+		while(j < myDfa->Qcount) {
+			if (!strcmp(newStateA, myDfa->Q[j])) {
+				break;
+			}
+			j++;
+		}
+
+		if (j == myDfa->Qcount) {
+			strcpy(myDfa->Q[j], newStateA);
+			myDfa->Qcount++;
+			if (is_final(newStateA, myNfa)) {
+				strcpy(myDfa->F[myDfa->Fcount], newStateA);
+				myDfa->Fcount++;
+			}
+		}
+
+		myDfa->delta[myDfa->Tcount].input = 'a';
+		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
+		strcpy(myDfa->delta[myDfa->Tcount].finalState, newStateA);
+	}
+	
+	myDfa->Tcount++;
+		
+	if (!newStateB[0]) {
+		myDfa->delta[myDfa->Tcount].input = 'b';
+		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
+		strcpy(myDfa->delta[myDfa->Tcount].finalState, "null");
+	} else {
+		int j = 1;
+		while(j < myDfa->Qcount) {
+			if (!strcmp(newStateB, myDfa->Q[j])) {
+				break;
+			}
+			j++;
+		}
+
+		if (j == myDfa->Qcount) {
+			strcpy(myDfa->Q[j], newStateB);
+			myDfa->Qcount++;
+			if (is_final(newStateB, myNfa)) {
+				strcpy(myDfa->F[myDfa->Fcount], newStateB);
+				myDfa->Fcount++;
+			}
+		}
+
+		myDfa->delta[myDfa->Tcount].input = 'b';
+		strcpy(myDfa->delta[myDfa->Tcount].currentState, myDfa->Q[index]);
+		strcpy(myDfa->delta[myDfa->Tcount].finalState, newStateB);
+		
+	}
+	
+	myDfa->Tcount++;
+}
+
 void nfa_to_dfa(struct nfa* myNfa, struct dfa* myDfa) {
+	int i;
+	int tempTCount = 128;
 	cleanup_nfa_states(myNfa);
+	
+	// Add null state at beginning
+	myDfa->Qcount = 1;
+	myDfa->Fcount = 0;
+	
+	strcpy(myDfa->Q[0], "null");
+	
+	myDfa->delta = malloc(sizeof(struct transition) * tempTCount);
+	myDfa->delta[0].input = 'a';
+	strcpy(myDfa->delta[0].currentState, "null");
+	strcpy(myDfa->delta[0].finalState, "null");
+	myDfa->delta[1].input = 'b';
+	strcpy(myDfa->delta[1].currentState, "null");
+	strcpy(myDfa->delta[1].finalState, "null");
+	myDfa->Tcount = 2;
+	
+	// Create start state
+	strcpy(myDfa->q0, myNfa->q0);
+	for (i=0; i<myNfa->Tcount; i++) {
+		if (myNfa->delta[i].input == 'e' && strpbrk(myNfa->delta[i].currentState, myDfa->q0)) {
+			int j = 0;
+			char swap;
+			char tmp;
+			while(myDfa->q0[j]) {
+				if(myDfa->q0[j] >= myNfa->delta[i].finalState[0]) {
+					break;
+				}
+				j++;
+			}
+			if (myDfa->q0[j] == myNfa->delta[i].finalState[0]) {
+				continue;
+			}
+			swap = myDfa->q0[j];
+			myDfa->q0[j] = myNfa->delta[i].finalState[0];
+			while(myDfa->q0[j]) {
+				tmp = myDfa->q0[j+1];
+				myDfa->q0[j+1] = swap;
+				swap = tmp;
+				j++;
+			}
+			i = 0;
+		}
+	}
+	
+	strcpy(myDfa->Q[1], myDfa->q0);
+	myDfa->Qcount++;
+	
+	if (is_final(myDfa->q0, myNfa)) {
+		myDfa->Fcount++;
+		strcpy(myDfa->F[0], myDfa->q0);
+	}
+	
+	i = 1;
+	while(i < myDfa->Qcount) {
+		char thisState[256];
+		char newStateA[256] = { 0 };
+		char newStateB[256] = { 0 };
+		int j;
+
+		strcpy(thisState, myDfa->Q[i]);
+		build_new_states(thisState, newStateA, newStateB, myNfa);
+		link_new_states(i, newStateA, newStateB, myDfa, myNfa, &tempTCount);
+		
+		i++;
+	}
 }
 
 void init_dfa(char* regex, size_t regex_size, struct dfa* myDfa) {
 	struct nfa myNfa;
 	init_nfa(regex, regex_size, &myNfa);
+	nfa_to_dfa(&myNfa, myDfa);
 }
 
 int test_line(char* line, size_t line_size, struct dfa* myDfa) {
-	return 0;
+	int i;
+	char curState[256];
+	int is_final = 0;
+	strcpy(curState, myDfa->q0);
+
+	for (i = 0; i < line_size; i++) {
+		int j;
+		char c = line[i];
+		for (j=0; j<myDfa->Tcount; j++) {
+			if (!strcmp(curState, myDfa->delta[j].currentState) && c == myDfa->delta[j].input) {
+				strcpy(curState, myDfa->delta[j].finalState);
+				break;
+			}
+		}
+	}
+	
+	for (i = 0; i < myDfa->Fcount; i++) {
+		if (!strcmp(curState, myDfa->F[i])) {
+			is_final = 1;
+			break;
+		}
+	}
+	return is_final;
 }
