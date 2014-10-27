@@ -44,6 +44,7 @@ void main (void) {
 	init_dfa(regex, regex_size, &myDfa);
 	
 	while(getline(&line, &line_size, stdin) >= 0) {
+		line_size = strlen(line);
 		if(test_line(line, line_size, &myDfa))
 			printf("yes\n");
 		else
