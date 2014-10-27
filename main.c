@@ -344,6 +344,27 @@ void copy_nfa(struct nfa* nfa1, struct nfa* newNfa) {
 	free(nfa1->delta);
 }
 
+void vertical_extract(char* regex, size_t regex_size, size_t *substr_size) {
+	int bar_count = 1;
+	int bar_ignore = 0;
+	*substr_size = 0;
+	if(regex[0] != '|')
+		return;
+	while(bar_count > 0) {
+		(*substr_size)++;
+		if ((*substr_size) == regex_size && !bar_ignore)
+			return;
+		if (regex[*substr_size] == '|') {
+			bar_count--;
+		} else if (regex[*substr_size] == '(') {
+			bar_ignore++;
+		} else if (regex[*substr_size] == ')') {
+			bar_ignore--;
+		}
+	}
+	*substr_size -= 1;
+}
+
 void paran_extract(char* regex, size_t regex_size, size_t *substr_size, int *has_star) {
 	int paren_count = 1;
 	*substr_size = 0;
@@ -413,35 +434,12 @@ void init_nfa(char* regex, size_t regex_size, struct nfa* myNfa) {
 			break;
 		case '|':
 			{
+				size_t substr_size;
 				struct nfa tempNfa;
 				struct nfa tempNfa2;
-				if (regex[index+1] ==  '(') {
-					size_t substr_size;
-					int has_star;
-					paran_extract(regex+index+1, regex_size-index-1, &substr_size, &has_star);
-					init_nfa(regex+index+2, substr_size, &tempNfa);
-					index += substr_size + 2 /* ( and ) */ + 1 /* | */; 
-					if (has_star) {
-						star_nfa(&tempNfa, &tempNfa2);
-						copy_nfa(&tempNfa2, &tempNfa);
-					}
-				} else if(regex[index+1] == 'e') {
-					empty_char_nfa(&tempNfa);
-					if ( index + 2 < regex_size && regex[index+2] == '*') {
-						star_nfa(&tempNfa, &tempNfa2);
-						copy_nfa(&tempNfa2, &tempNfa);
-						index++;
-					}
-					index += 2; /* | and e */
-				} else {
-					single_char_nfa(regex[index+1], &tempNfa);
-					if ( index + 2 < regex_size && regex[index+2] == '*') {
-						star_nfa(&tempNfa, &tempNfa2);
-						copy_nfa(&tempNfa2, &tempNfa);
-						index++;
-					}
-					index += 2; /* | and a or b */
-				}
+				vertical_extract(regex+index, regex_size-index, &substr_size);
+				init_nfa(regex+index+1, substr_size, &tempNfa);
+				index += substr_size + 1;
 				union_nfa(&leftNfa, &tempNfa, &tempNfa2);
 				copy_nfa(&tempNfa2, &leftNfa);
 			}
